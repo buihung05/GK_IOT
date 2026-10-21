@@ -191,8 +191,9 @@ static const char INDEX_HTML[] PROGMEM = R"EVWEB(<!doctype html>
       <article class="card panel">
         <div class="panel-head"><div><h2>Chi tiết phiên sạc</h2><div class="sub">Thông số dùng cho quyết định cục bộ</div></div></div>
         <div class="facts">
-          <div class="fact"><span>MOSFET tải</span><strong id="relayFact">--</strong></div>
-          <div class="fact"><span>Biến trở / PWM</span><strong id="pwmFact">--</strong></div>
+          <div class="fact"><span>Relay tải</span><strong id="relayFact">--</strong></div>
+          <div class="fact"><span>Cảm biến INA219</span><strong id="inaFact">--</strong></div>
+          <div class="fact"><span>Biến trở / công suất thật</span><strong id="pwmFact">--</strong></div>
           <div class="fact"><span>Cảm biến DHT11</span><strong id="temperatureNodeFact">--</strong></div>
           <div class="fact"><span>Thời gian phiên</span><strong id="sessionFact">--</strong></div>
           <div class="fact"><span>Ngưỡng nhận diện đầy</span><strong id="thresholdFact">--</strong></div>
@@ -204,7 +205,7 @@ static const char INDEX_HTML[] PROGMEM = R"EVWEB(<!doctype html>
     </section>
 
     <section class="card panel section" id="simulationPanel" hidden>
-      <div class="panel-head"><div><h2>Bàn điều khiển mô phỏng</h2><div class="sub">Tạo tình huống kiểm thử mà không cần INA219, MOSFET hoặc cảm biến thật</div></div></div>
+      <div class="panel-head"><div><h2>Bàn điều khiển mô phỏng</h2><div class="sub">Tạo tình huống kiểm thử mà không cần INA219, relay hoặc cảm biến thật</div></div></div>
       <div class="sim-grid">
         <button class="scenario" data-preset="charging">Đang sạc</button>
         <button class="scenario" data-preset="near_full">Gần đầy</button>
@@ -248,20 +249,20 @@ static const char INDEX_HTML[] PROGMEM = R"EVWEB(<!doctype html>
   <script>
     const $ = (selector) => document.querySelector(selector);
     const stateInfo = {
-      idle: ['Sẵn sàng', 'Nhấn “Bắt đầu phiên sạc” sau khi đã kết nối tải. MOSFET đang ở trạng thái an toàn.'],
+      idle: ['Sẵn sàng', 'Nhấn “Bắt đầu phiên sạc” sau khi đã kết nối tải. Relay đang ở trạng thái an toàn.'],
       charging: ['Đang sạc', 'Hệ thống đang theo dõi công suất và nhiệt độ theo thời gian thực.'],
       verifying_full: ['Đang xác thực', 'Công suất đã giảm thấp. ESP32 đang chờ tín hiệu ổn định để loại bỏ nhiễu.'],
       waiting_decision: ['Có thể đã đầy', 'Bạn có thể ngắt ngay hoặc tiếp tục sạc. Nếu không phản hồi, hệ thống sẽ tự xác thực và ngắt.'],
       stopped_full: ['Đã ngắt an toàn', 'Quá trình sạc được xác nhận đã hoàn tất. Nhấn bắt đầu để tạo phiên mới.'],
       stopped_overheat: ['Đã ngắt do quá nhiệt', 'Chờ nhiệt độ giảm xuống ngưỡng phục hồi rồi mới bắt đầu phiên mới.'],
       stopped_sensor_fault: ['Đã ngắt do lỗi cảm biến', 'Kiểm tra INA219 và cảm biến nhiệt trước khi thử lại.'],
-      stopped_manual: ['Đã ngắt thủ công', 'MOSFET đã khóa theo yêu cầu của người dùng.']
+      stopped_manual: ['Đã ngắt thủ công', 'Relay đã ngắt theo yêu cầu của người dùng.']
     };
     const eventLabels = {
       session_started: 'Đã bắt đầu phiên sạc mới', full_suspected: 'Phát hiện dấu hiệu sạc hoàn tất',
       full_confirmed: 'Đã xác nhận đầy và tự ngắt', continue_selected: 'Người dùng chọn tiếp tục sạc',
-      manual_stopped: 'Người dùng ngắt thủ công', overheat_stopped: 'Quá nhiệt — MOSFET đã khóa',
-      sensor_fault_stopped: 'Lỗi cảm biến — MOSFET đã khóa', start_blocked_hot: 'Không thể bắt đầu: nhiệt độ chưa an toàn',
+      manual_stopped: 'Người dùng ngắt thủ công', overheat_stopped: 'Quá nhiệt — relay đã ngắt',
+      sensor_fault_stopped: 'Lỗi cảm biến — relay đã ngắt', start_blocked_hot: 'Không thể bắt đầu: nhiệt độ chưa an toàn',
       start_blocked_sensor: 'Không thể bắt đầu: cảm biến chưa sẵn sàng'
     };
     const localMode = location.protocol === 'file:';
@@ -272,7 +273,7 @@ static const char INDEX_HTML[] PROGMEM = R"EVWEB(<!doctype html>
     let toastTimer;
 
     const localStatus = {
-      state: 'idle', event: 'none', eventId: 0, relayOn: false, outputEnabled: false, mosfetDuty: 0,
+      state: 'idle', event: 'none', eventId: 0, relayOn: false, outputEnabled: false,
       potentiometer: 100, voltage: 12, current: .48, power: 5.76, filteredPower: 5.76, temperature: 30,
       humidity: 55, temperatureAgeSeconds: 0, temperatureSource: 'simulation', powerValid: true,
       temperatureValid: true, temperatureWarning: false,
@@ -343,13 +344,20 @@ static const char INDEX_HTML[] PROGMEM = R"EVWEB(<!doctype html>
       $('#voltage').textContent = status.powerValid ? Number(status.voltage).toFixed(2) : 'Lỗi';
       $('#current').textContent = status.powerValid ? Number(status.current).toFixed(3) : 'Lỗi';
       $('#power').textContent = status.powerValid ? Number(status.filteredPower).toFixed(2) : 'Lỗi';
-      $('#temperature').textContent = status.temperatureValid ? Number(status.temperature).toFixed(1) : 'Lỗi';
+      const temperatureAvailable = status.temperatureAvailable ?? status.temperatureValid;
+      $('#temperature').textContent = temperatureAvailable
+        ? (status.temperatureValid ? Number(status.temperature).toFixed(1) : 'Lỗi')
+        : 'Không dùng';
       $('#temperature').parentElement.classList.toggle('danger', status.state === 'stopped_overheat');
       $('#temperature').parentElement.classList.toggle('warning', status.temperatureWarning && status.state !== 'stopped_overheat');
       const outputEnabled = status.outputEnabled ?? status.relayOn;
-      $('#relayFact').textContent = outputEnabled ? 'Được phép cấp tải' : 'Đã khóa an toàn';
-      $('#pwmFact').textContent = `${Number(status.potentiometer || 0).toFixed(0)}% / ${Number(status.mosfetDuty || 0).toFixed(0)}%`;
-      $('#temperatureNodeFact').textContent = status.temperatureValid
+      $('#relayFact').textContent = status.relayOn ? 'Đang đóng COM1–NO1' : 'Đang ngắt tải';
+      const inaAddress = Number(status.ina219Address ?? 64).toString(16).padStart(2, '0').toUpperCase();
+      $('#inaFact').textContent = status.simulation ? 'Mô phỏng' : (status.powerValid ? `Đã kết nối · 0x${inaAddress}` : 'Không phản hồi');
+      $('#pwmFact').textContent = `${Number(status.potentiometer || 0).toFixed(0)}% / ${Number(status.measuredPower ?? status.power ?? 0).toFixed(2)} W`;
+      $('#temperatureNodeFact').textContent = !temperatureAvailable
+        ? 'Tạm bỏ qua trong chế độ thử'
+        : status.temperatureValid
         ? `${Number(status.humidity || 0).toFixed(0)}% RH · ${status.temperatureSource === 'simulation' ? 'mô phỏng' : `${status.temperatureAgeSeconds}s trước`}`
         : 'Mất kết nối';
       $('#sessionFact').textContent = formatTime(status.sessionSeconds);

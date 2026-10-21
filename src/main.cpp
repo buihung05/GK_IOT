@@ -20,24 +20,29 @@
 #define SIMULATION_MODE 1
 #endif
 
+#ifndef REQUIRE_TEMPERATURE_NODE
+#define REQUIRE_TEMPERATURE_NODE 1
+#endif
+
 namespace {
-constexpr uint8_t INA219_I2C_ADDRESS = 0x40;
 constexpr uint16_t INA219_CONFIG_32V_64_SAMPLES = 0x3F77;
-constexpr uint16_t PWM_MAX = (1U << MOSFET_PWM_RESOLUTION_BITS) - 1U;
 
 WebServer server(80);
 Preferences preferences;
-Adafruit_INA219 ina219;
+Adafruit_INA219* ina219 = nullptr;
 ChargerController controller;
 SensorReading latestReading;
 
 bool inaReady = false;
+uint8_t ina219I2cAddress = 0x40;
 uint32_t lastSensorAtMs = 0;
+uint32_t lastInaRetryAtMs = 0;
 uint32_t handledEventId = 0;
 uint8_t learningSamples = 0;
 float learnedTypicalPowerW = 0.0f;
 uint16_t potentiometerRaw = 0;
-uint8_t mosfetDuty = 0;
+bool relayOutputOn = false;
+float measuredPowerW = 0.0f;
 
 float remoteTemperatureC = 0.0f;
 float remoteHumidityPercent = 0.0f;
@@ -55,6 +60,18 @@ bool simulatedTemperatureValid = true;
 
 String boolJson(bool value) { return value ? "true" : "false"; }
 
+float storedFloat(const char* key, float fallback) {
+  return preferences.isKey(key) ? preferences.getFloat(key, fallback) : fallback;
+}
+
+uint32_t storedUInt(const char* key, uint32_t fallback) {
+  return preferences.isKey(key) ? preferences.getUInt(key, fallback) : fallback;
+}
+
+uint8_t storedUChar(const char* key, uint8_t fallback) {
+  return preferences.isKey(key) ? preferences.getUChar(key, fallback) : fallback;
+}
+
 float constrainedArg(const String& name, float fallback, float low, float high) {
   if (!server.hasArg(name)) return fallback;
   return constrain(server.arg(name).toFloat(), low, high);
@@ -68,60 +85,140 @@ uint32_t secondsArg(const String& name, uint32_t fallbackMs,
 }
 
 void writeIna219Configuration(uint16_t value) {
-  Wire.beginTransmission(INA219_I2C_ADDRESS);
+  Wire.beginTransmission(ina219I2cAddress);
   Wire.write(0x00);
   Wire.write(static_cast<uint8_t>(value >> 8));
   Wire.write(static_cast<uint8_t>(value & 0xFF));
   Wire.endTransmission();
 }
 
+bool ina219Responding() {
+  Wire.beginTransmission(ina219I2cAddress);
+  return Wire.endTransmission() == 0;
+}
+
+uint8_t findIna219Address() {
+  Serial.print("INA219 I2C scan 0x40-0x4F:");
+  for (uint8_t address = 0x40; address <= 0x4F; ++address) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf(" found 0x%02X\n", address);
+      return address;
+    }
+  }
+  Serial.println(" khong co phan hoi");
+  return 0;
+}
+
+bool initializeIna219() {
+  const uint8_t detectedAddress = findIna219Address();
+  if (detectedAddress == 0) {
+    inaReady = false;
+    Serial.println("INA219: kiem tra VCC/GND/SDA/SCL");
+    return false;
+  }
+
+  if (ina219 == nullptr || detectedAddress != ina219I2cAddress) {
+    delete ina219;
+    ina219I2cAddress = detectedAddress;
+    ina219 = new Adafruit_INA219(ina219I2cAddress);
+  }
+  if (!ina219->begin()) {
+    inaReady = false;
+    Serial.printf("INA219: tim thay 0x%02X nhung khoi tao that bai\n",
+                  ina219I2cAddress);
+    return false;
+  }
+
+  ina219->setCalibration_32V_2A();
+  writeIna219Configuration(INA219_CONFIG_32V_64_SAMPLES);
+  inaReady = true;
+  Serial.printf("INA219: da ket noi tai dia chi 0x%02X\n", ina219I2cAddress);
+  return true;
+}
+
 void configurePowerStage() {
-  pinMode(MOSFET_GATE_PIN, OUTPUT);
+  const uint8_t relayOffLevel = RELAY_ACTIVE_LOW ? HIGH : LOW;
+  // Ghi mức OFF trước khi đổi chân thành OUTPUT để hạn chế relay nháy lúc boot.
+  digitalWrite(RELAY_PIN, relayOffLevel);
+  pinMode(RELAY_PIN, OUTPUT);
   pinMode(POTENTIOMETER_PIN, INPUT);
   pinMode(STATUS_LED_PIN, OUTPUT);
-  digitalWrite(MOSFET_GATE_PIN, LOW);
   digitalWrite(STATUS_LED_PIN, LOW);
   analogReadResolution(12);
-  ledcSetup(MOSFET_PWM_CHANNEL, MOSFET_PWM_FREQUENCY_HZ,
-            MOSFET_PWM_RESOLUTION_BITS);
-  ledcAttachPin(MOSFET_GATE_PIN, MOSFET_PWM_CHANNEL);
-  ledcWrite(MOSFET_PWM_CHANNEL, 0);
 }
 
 void applyPowerStage() {
+  bool requestedOn = controller.relayRequested();
 #if SIMULATION_MODE
-  mosfetDuty = controller.relayRequested()
-                   ? static_cast<uint8_t>(map(potentiometerRaw, 0, 4095, 0, PWM_MAX))
-                   : 0;
-  // Chế độ mô phỏng luôn giữ chân Gate ở mức tắt dù dashboard hiển thị PWM ảo.
-  ledcWrite(MOSFET_PWM_CHANNEL, 0);
-#else
-  mosfetDuty = controller.relayRequested()
-                   ? static_cast<uint8_t>(map(potentiometerRaw, 0, 4095, 0, PWM_MAX))
-                   : 0;
-  ledcWrite(MOSFET_PWM_CHANNEL, mosfetDuty);
+  // Chế độ mô phỏng không bao giờ kích relay thật.
+  requestedOn = false;
 #endif
-  digitalWrite(STATUS_LED_PIN, mosfetDuty > 0 ? HIGH : LOW);
+  relayOutputOn = requestedOn;
+  const uint8_t relayLevel = relayOutputOn
+                                 ? (RELAY_ACTIVE_LOW ? LOW : HIGH)
+                                 : (RELAY_ACTIVE_LOW ? HIGH : LOW);
+  digitalWrite(RELAY_PIN, relayLevel);
+  digitalWrite(STATUS_LED_PIN, relayOutputOn ? HIGH : LOW);
 }
 
 void loadPersistentData() {
   preferences.begin("ev-charger", false);
 
   ChargerSettings settings;
-  settings.activePowerW = preferences.getFloat("pActive", 2.0f);
-  settings.fixedFullPowerW = preferences.getFloat("pFull", 0.8f);
-  settings.learnedFullRatio = preferences.getFloat("pRatio", 0.18f);
-  settings.warningTemperatureC = preferences.getFloat("tWarn", 35.0f);
-  settings.cutoffTemperatureC = preferences.getFloat("tCut", 45.0f);
-  settings.recoveryTemperatureC = preferences.getFloat("tRecover", 32.0f);
-  settings.minimumChargeMs = preferences.getUInt("minCharge", 10000UL);
-  settings.fullConfirmMs = preferences.getUInt("confirm", 60000UL);
-  settings.decisionWaitMs = preferences.getUInt("decision", 900000UL);
-  settings.continuePauseMs = preferences.getUInt("pause", 300000UL);
+  settings.activePowerW = storedFloat("pActive", 2.0f);
+  settings.fixedFullPowerW = storedFloat("pFull", 0.8f);
+  settings.learnedFullRatio = storedFloat("pRatio", 0.18f);
+  settings.warningTemperatureC = storedFloat("tWarn", 35.0f);
+  settings.cutoffTemperatureC = storedFloat("tCut", 45.0f);
+  settings.recoveryTemperatureC = storedFloat("tRecover", 32.0f);
+  settings.minimumChargeMs = storedUInt("minCharge", 10000UL);
+  settings.fullConfirmMs = storedUInt("confirm", 60000UL);
+  settings.decisionWaitMs = storedUInt("decision", 900000UL);
+  settings.continuePauseMs = storedUInt("pause", 300000UL);
+
+  // Không cho dữ liệu NVS cũ hoặc hỏng tạo cấu hình nguy hiểm.
+  if (!isfinite(settings.activePowerW) ||
+      !isfinite(settings.fixedFullPowerW) ||
+      settings.activePowerW < 0.2f || settings.activePowerW > 100.0f ||
+      settings.fixedFullPowerW < 0.05f ||
+      settings.fixedFullPowerW >= settings.activePowerW) {
+    settings.activePowerW = 2.0f;
+    settings.fixedFullPowerW = 0.8f;
+  }
+  if (!isfinite(settings.learnedFullRatio) ||
+      settings.learnedFullRatio < 0.05f ||
+      settings.learnedFullRatio > 0.8f) {
+    settings.learnedFullRatio = 0.18f;
+  }
+  if (!isfinite(settings.warningTemperatureC) ||
+      !isfinite(settings.cutoffTemperatureC) ||
+      !isfinite(settings.recoveryTemperatureC) ||
+      settings.warningTemperatureC < 20.0f ||
+      settings.warningTemperatureC > 90.0f ||
+      settings.cutoffTemperatureC < 25.0f ||
+      settings.cutoffTemperatureC > 100.0f ||
+      settings.recoveryTemperatureC < 10.0f ||
+      settings.recoveryTemperatureC > 80.0f ||
+      settings.recoveryTemperatureC >= settings.cutoffTemperatureC ||
+      settings.warningTemperatureC >= settings.cutoffTemperatureC) {
+    settings.warningTemperatureC = 35.0f;
+    settings.cutoffTemperatureC = 45.0f;
+    settings.recoveryTemperatureC = 32.0f;
+  }
+  settings.minimumChargeMs = constrain(settings.minimumChargeMs, 0UL, 3600000UL);
+  settings.fullConfirmMs = constrain(settings.fullConfirmMs, 3000UL, 3600000UL);
+  settings.decisionWaitMs = constrain(settings.decisionWaitMs, 5000UL, 3600000UL);
+  settings.continuePauseMs = constrain(settings.continuePauseMs, 5000UL, 3600000UL);
   controller.setSettings(settings);
 
-  learnedTypicalPowerW = preferences.getFloat("learnedP", 0.0f);
-  learningSamples = preferences.getUChar("learnedN", 0);
+  learnedTypicalPowerW = storedFloat("learnedP", 0.0f);
+  if (!isfinite(learnedTypicalPowerW) || learnedTypicalPowerW < 0.0f) {
+    learnedTypicalPowerW = 0.0f;
+  }
+  learningSamples = constrain(storedUChar("learnedN", 0),
+                              static_cast<uint8_t>(0),
+                              static_cast<uint8_t>(3));
   controller.setLearningProfile(learnedTypicalPowerW, learningSamples);
 }
 
@@ -165,6 +262,7 @@ void readSensors() {
   latestReading.voltageV = simulatedVoltageV;
   latestReading.currentA = simulatedCurrentA;
   latestReading.powerW = simulatedVoltageV * simulatedCurrentA;
+  measuredPowerW = latestReading.powerW;
   latestReading.temperatureC = simulatedTemperatureC;
   latestReading.powerValid = simulatedPowerValid;
   latestReading.temperatureValid = simulatedTemperatureValid;
@@ -172,19 +270,43 @@ void readSensors() {
       constrain(simulatedCurrentA / 0.48f, 0.0f, 1.0f) * 4095.0f);
 #else
   potentiometerRaw = analogRead(POTENTIOMETER_PIN);
+  if (inaReady && !ina219Responding()) {
+    inaReady = false;
+    Serial.println("INA219: mat ket noi");
+  }
+  if (!inaReady && millis() - lastInaRetryAtMs >= INA219_RETRY_INTERVAL_MS) {
+    lastInaRetryAtMs = millis();
+    initializeIna219();
+  }
   latestReading.powerValid = inaReady;
   if (inaReady) {
-    const float busVoltage = ina219.getBusVoltage_V();
-    const float shuntVoltage = ina219.getShuntVoltage_mV() / 1000.0f;
+    const float busVoltage = ina219->getBusVoltage_V();
+    const float shuntVoltage = ina219->getShuntVoltage_mV() / 1000.0f;
     latestReading.voltageV = max(0.0f, busVoltage + shuntVoltage);
-    latestReading.currentA = max(0.0f, ina219.getCurrent_mA() / 1000.0f);
-    latestReading.powerW = latestReading.voltageV * latestReading.currentA;
+    latestReading.currentA = max(0.0f, ina219->getCurrent_mA() / 1000.0f);
+    measuredPowerW = latestReading.voltageV * latestReading.currentA;
+    // Relay chỉ bật/tắt nên biến trở không thể thay đổi công suất tải thật.
+    // Dùng biến trở để tạo đường cong công suất cho thuật toán demo, trong khi
+    // INA219 vẫn xác nhận tải thật có dòng điện.
+    const float simulatedChargeRatio = potentiometerRaw / 4095.0f;
+    latestReading.powerW = measuredPowerW * simulatedChargeRatio;
+  } else {
+    latestReading.voltageV = 0.0f;
+    latestReading.currentA = 0.0f;
+    latestReading.powerW = 0.0f;
+    measuredPowerW = 0.0f;
   }
 
   const uint32_t age = millis() - lastRemoteTemperatureAtMs;
-  latestReading.temperatureC = remoteTemperatureC;
-  latestReading.temperatureValid =
-      hasRemoteTemperature && age <= TEMPERATURE_STALE_MS;
+  if (hasRemoteTemperature) {
+    latestReading.temperatureC = remoteTemperatureC;
+    // Một khi nút nhiệt đã xuất hiện, mất dữ liệu vẫn được xử lý theo hướng
+    // an toàn kể cả trong môi trường thử nghiệm không bắt buộc cảm biến.
+    latestReading.temperatureValid = age <= TEMPERATURE_STALE_MS;
+  } else {
+    latestReading.temperatureC = 25.0f;
+    latestReading.temperatureValid = REQUIRE_TEMPERATURE_NODE == 0;
+  }
 #endif
 }
 
@@ -210,20 +332,30 @@ String statusJson() {
   json += "\"state\":\"" + String(ChargerController::stateName(controller.state())) + "\",";
   json += "\"event\":\"" + String(ChargerController::eventName(controller.lastEvent())) + "\",";
   json += "\"eventId\":" + String(controller.eventId()) + ",";
-  json += "\"relayOn\":" + boolJson(controller.relayRequested()) + ",";
+  json += "\"relayOn\":" + boolJson(relayOutputOn) + ",";
   json += "\"outputEnabled\":" + boolJson(controller.relayRequested()) + ",";
-  json += "\"mosfetDuty\":" + String(roundf(mosfetDuty * 100.0f / PWM_MAX), 0) + ",";
+  json += "\"relayActiveLow\":" + boolJson(RELAY_ACTIVE_LOW) + ",";
   json += "\"potentiometer\":" + String(roundf(potentiometerRaw * 100.0f / 4095.0f), 0) + ",";
   json += "\"voltage\":" + String(latestReading.voltageV, 2) + ",";
   json += "\"current\":" + String(latestReading.currentA, 3) + ",";
   json += "\"power\":" + String(latestReading.powerW, 2) + ",";
+  json += "\"measuredPower\":" + String(measuredPowerW, 2) + ",";
   json += "\"filteredPower\":" + String(controller.filteredPowerW(), 2) + ",";
   json += "\"temperature\":" + String(latestReading.temperatureC, 1) + ",";
   json += "\"humidity\":" + String(humidity, 1) + ",";
   json += "\"temperatureAgeSeconds\":" + String(temperatureAgeSeconds) + ",";
   json += "\"temperatureSource\":\"" + String(SIMULATION_MODE ? "simulation" : "dht11_remote") + "\",";
   json += "\"powerValid\":" + boolJson(latestReading.powerValid) + ",";
+  json += "\"ina219Address\":" + String(ina219I2cAddress) + ",";
   json += "\"temperatureValid\":" + boolJson(latestReading.temperatureValid) + ",";
+  json += "\"temperatureAvailable\":" + boolJson(
+#if SIMULATION_MODE
+      true
+#else
+      hasRemoteTemperature
+#endif
+      ) + ",";
+  json += "\"temperatureRequired\":" + boolJson(REQUIRE_TEMPERATURE_NODE != 0) + ",";
   json += "\"temperatureWarning\":" + boolJson(controller.temperatureWarning()) + ",";
   json += "\"seenActive\":" + boolJson(controller.hasSeenActiveCharge()) + ",";
   json += "\"sessionSeconds\":" + String(controller.sessionElapsedMs(millis()) / 1000UL) + ",";
@@ -272,9 +404,22 @@ void handleAction() {
   }
 
   applyPowerStage();
-  sendJson(accepted ? 200 : 409,
-           String("{\"ok\":") + boolJson(accepted) +
-               ",\"status\":" + statusJson() + "}");
+  String message;
+  if (!accepted) {
+    if (!latestReading.powerValid) {
+      message = "Khong the bat dau: INA219 chua san sang";
+    } else if (!latestReading.temperatureValid) {
+      message = "Khong the bat dau: chua nhan du lieu DHT11";
+    } else if (controller.lastEvent() == ChargerEvent::START_BLOCKED_HOT) {
+      message = "Khong the bat dau: nhiet do chua an toan";
+    } else {
+      message = "Lenh khong hop le voi trang thai hien tai";
+    }
+  }
+  String response = String("{\"ok\":") + boolJson(accepted);
+  if (!accepted) response += ",\"message\":\"" + message + "\"";
+  response += ",\"status\":" + statusJson() + "}";
+  sendJson(accepted ? 200 : 409, response);
 }
 
 void handleConfig() {
@@ -418,12 +563,8 @@ void setup() {
   Serial.begin(115200);
   configurePowerStage();
 
-  Wire.begin();
-  inaReady = ina219.begin();
-  if (inaReady) {
-    ina219.setCalibration_32V_2A();
-    writeIna219Configuration(INA219_CONFIG_32V_64_SAMPLES);
-  }
+  Wire.begin(21, 22);
+  initializeIna219();
 
   loadPersistentData();
   readSensors();

@@ -42,7 +42,7 @@ ESP32 thứ hai → DHT11 GPIO4 → Wi-Fi → ESP32 chính
 | `GPIO2` | LED tích hợp báo trạng thái |
 | `GPIO26` | Không nối trong cấu hình relay |
 
-> Không nối relay vào GPIO26. Firmware MOSFET cũ phát PWM 1 kHz trên chân này và có thể làm relay đóng/ngắt liên tục.
+> Không nối relay vào GPIO26. Firmware hiện tại điều khiển relay bằng tín hiệu số trên GPIO27.
 
 ## 4. Nguồn và LM2596
 
@@ -69,7 +69,7 @@ Trước khi nối ESP32 hoặc relay, dùng đồng hồ chỉnh LM2596 xuống
 | `VIN+` | Nguồn 12 V (+) |
 | `VIN-` | Relay `COM1` |
 
-INA219 được mắc nối tiếp ở phía dương để đo toàn bộ dòng qua tải. Địa chỉ I²C mặc định trong firmware là `0x40`.
+INA219 được mắc nối tiếp ở phía dương để đo toàn bộ dòng qua tải. Firmware tự dò dải địa chỉ INA219 từ `0x40` đến `0x4F`; module chưa thay đổi jumper thường dùng `0x40`.
 
 ## 6. Module 2 relay
 
@@ -160,9 +160,9 @@ Máy nhận: http://192.168.4.1/api/temperature
 
 ## 11. Trạng thái firmware
 
-Môi trường `esp32_hardware` ban đầu được viết cho MOSFET PWM trên GPIO26. Sơ đồ mới dùng relay ở GPIO27 nên firmware phải chuyển sang điều khiển số bật/tắt trước khi nối `IN1`.
+Môi trường `esp32_hardware` điều khiển module relay kênh 1 bằng GPIO27. Mặc định firmware dùng relay kích mức thấp (`LOW` là bật), phù hợp với phần lớn module 2 relay 5 V. Nếu module kích mức cao, đổi `RELAY_ACTIVE_LOW` thành `false` trong `include/AppConfig.h` rồi nạp lại.
 
-Không chạy relay bằng PWM. Sau khi cập nhật firmware, relay sẽ ngắt khi người dùng yêu cầu, thuật toán xác nhận đầy hoặc phát hiện quá nhiệt; chức năng tự ngắt vẫn chạy khi mất Wi-Fi.
+Relay sẽ ngắt khi người dùng yêu cầu, thuật toán xác nhận đầy hoặc phát hiện quá nhiệt. Chức năng tự ngắt vẫn chạy khi điện thoại mất Wi-Fi. Không chạy relay bằng PWM.
 
 ## 12. Nạp chương trình
 
@@ -171,6 +171,14 @@ ESP32 chính:
 ```cmd
 "C:\Users\Admin\.platformio\penv\Scripts\platformio.exe" run -e esp32_hardware -t upload --upload-port COM4
 ```
+
+Chỉ thử ESP32 chính khi chưa có ESP32+DHT11:
+
+```cmd
+"C:\Users\Admin\.platformio\penv\Scripts\platformio.exe" run -e esp32_hardware_no_temp -t upload --upload-port COM4
+```
+
+Môi trường `esp32_hardware_no_temp` vẫn chạy INA219, biến trở, relay, thuật toán đầy và web nhưng tạm vô hiệu hóa bảo vệ quá nhiệt. Chỉ dùng để thử trên bàn; khi có lại nút DHT11, nạp lại `esp32_hardware`.
 
 ESP32 nhiệt độ:
 
@@ -193,4 +201,3 @@ Thay cổng COM theo thực tế. Đóng Serial Monitor bằng `Ctrl+C` trước
 - Không nối tiếp điểm `COM/NO/NC` với GPIO ESP32.
 - DHT11 và thuật toán demo không thay thế BMS.
 - Xác nhận relay là loại 5 V hay 12 V trước khi cấp nguồn.
-"# GK_IOT" 

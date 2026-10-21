@@ -46,7 +46,12 @@ bool ChargerController::start(uint32_t nowMs) {
     publishEvent(ChargerEvent::START_BLOCKED_SENSOR);
     return false;
   }
-  if (reading_.temperatureC > settings_.recoveryTemperatureC) {
+  const bool recoveringFromOverheat = state_ == ChargerState::STOPPED_OVERHEAT;
+  const bool tooHotToStart =
+      reading_.temperatureC >= settings_.cutoffTemperatureC ||
+      (recoveringFromOverheat &&
+       reading_.temperatureC > settings_.recoveryTemperatureC);
+  if (tooHotToStart) {
     publishEvent(ChargerEvent::START_BLOCKED_HOT);
     return false;
   }

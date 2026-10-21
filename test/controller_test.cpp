@@ -93,12 +93,35 @@ void testHotRestartIsBlocked() {
   assert(controller.lastEvent() == ChargerEvent::START_BLOCKED_HOT);
 }
 
+void testWarmAmbientCanStart() {
+  ChargerController controller(fastSettings());
+  controller.update(reading(8.0f, 34.0f), 0);
+  assert(controller.start(0));
+  assert(controller.relayRequested());
+}
+
+void testOverheatRequiresRecoveryBeforeRestart() {
+  ChargerController controller(fastSettings());
+  controller.update(reading(8.0f, 30.0f), 0);
+  assert(controller.start(0));
+  controller.update(reading(8.0f, 50.0f), 100);
+  assert(controller.state() == ChargerState::STOPPED_OVERHEAT);
+
+  controller.update(reading(8.0f, 34.0f), 200);
+  assert(!controller.start(200));
+
+  controller.update(reading(8.0f, 30.0f), 300);
+  assert(controller.start(300));
+}
+
 int main() {
   testFullCycle();
   testContinueCancelsCountdown();
   testOverheatWinsImmediately();
   testSensorFailureIsFailSafe();
   testHotRestartIsBlocked();
-  std::cout << "5 controller tests passed.\n";
+  testWarmAmbientCanStart();
+  testOverheatRequiresRecoveryBeforeRestart();
+  std::cout << "7 controller tests passed.\n";
 }
 
