@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10231c">
+  <title>VoltGuard — Ổ cắm sạc thông minh</title>
+  <style>
+    :root {
+      --ink: #14251f;
+      --muted: #60736b;
+      --paper: #f3f1e8;
+      --card: #fffdf6;
+      --line: #d9dfd6;
+      --green: #176b4d;
+      --green-2: #26936b;
+      --mint: #dff3e8;
+      --amber: #c87c16;
+      --red: #b64235;
+      --shadow: 0 18px 50px rgba(27, 53, 42, .09);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .shell { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 52px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      width: 46px; height: 46px; display: grid; place-items: center; border-radius: 15px;
+      background: var(--ink); color: #e9ff87; box-shadow: var(--shadow);
+    }
+    .logo svg { width: 25px; }
+    .brand strong { display: block; font-size: 1.08rem; letter-spacing: -.02em; }
+    .brand span { color: var(--muted); font-size: .78rem; }
+    .chips { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.55); font-size: .76rem; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #a6afa9; }
+    .dot.online { background: #2ca977; box-shadow: 0 0 0 4px rgba(44,169,119,.12); }
+    .hero {
+      position: relative; overflow: hidden; padding: 32px; border-radius: 28px;
+      color: white; background: #10231c; box-shadow: var(--shadow);
+      display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, .8fr); gap: 28px;
+    }
+    .hero:after {
+      content: ""; position: absolute; right: -90px; top: -150px; width: 340px; height: 340px;
+      border: 56px solid rgba(233,255,135,.08); border-radius: 50%; pointer-events: none;
+    }
+    .eyebrow { margin: 0 0 12px; color: #bad7ca; font-size: .76rem; letter-spacing: .15em; text-transform: uppercase; }
+    .state-title { margin: 0; font-size: clamp(2rem, 5vw, 4.2rem); line-height: .98; letter-spacing: -.055em; }
+    .state-detail { margin: 16px 0 24px; max-width: 610px; color: #bfd0c8; line-height: 1.55; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .btn { border: 0; border-radius: 13px; padding: 12px 16px; font-weight: 700; transition: transform .15s, opacity .15s, background .15s; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:disabled { cursor: not-allowed; opacity: .42; }
+    .btn-primary { color: var(--ink); background: #e9ff87; }
+    .btn-ghost { color: white; border: 1px solid #466057; background: transparent; }
+    .btn-danger { color: white; background: #8f382e; }
+    .hero-side { position: relative; z-index: 1; align-self: stretch; display: flex; flex-direction: column; justify-content: space-between; gap: 22px; padding: 20px; border: 1px solid rgba(255,255,255,.11); border-radius: 20px; background: rgba(255,255,255,.055); }
+    .hero-side-label { color: #a9c1b7; font-size: .76rem; }
+    .countdown { margin-top: 5px; color: #e9ff87; font: 700 clamp(2rem, 6vw, 3.7rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.06em; }
+    .progress { height: 7px; overflow: hidden; border-radius: 99px; background: #2c433a; }
+    .progress span { display: block; height: 100%; width: 0; background: #e9ff87; transition: width .4s; }
+    .offline-note { color: #a9c1b7; font-size: .76rem; line-height: 1.45; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 16px 0; }
+    .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+    .metric { padding: 20px; }
+    .metric-head { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: .77rem; }
+    .metric-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 10px; background: var(--mint); color: var(--green); }
+    .metric-value { margin-top: 16px; font-size: clamp(1.65rem, 3vw, 2.25rem); font-weight: 760; letter-spacing: -.05em; }
+    .unit { margin-left: 3px; color: var(--muted); font-size: .8rem; font-weight: 600; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(290px, .75fr); gap: 16px; }
+    .panel { padding: 22px; }
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+    h2 { margin: 0; font-size: 1rem; letter-spacing: -.02em; }
+    .sub { margin-top: 5px; color: var(--muted); font-size: .75rem; }
+    .legend { display: flex; gap: 12px; color: var(--muted); font-size: .72rem; }
+    .legend i { display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; }
+    .chart-wrap { height: 240px; }
+    canvas { width: 100%; height: 100%; }
+    .facts { display: grid; gap: 14px; }
+    .fact { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .fact:last-child { border: 0; padding-bottom: 0; }
+    .fact span { color: var(--muted); font-size: .8rem; }
+    .fact strong { text-align: right; font-size: .9rem; }
+    .section { margin-top: 16px; }
+    .sim-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 9px; }
+    .scenario { padding: 13px 8px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: white; font-size: .78rem; font-weight: 700; }
+    .scenario:hover { border-color: var(--green-2); color: var(--green); }
+    .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: .73rem; }
+    input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: white; outline: none; }
+    input:focus { border-color: var(--green-2); box-shadow: 0 0 0 3px rgba(38,147,107,.12); }
+    .config-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .btn-small { padding: 10px 13px; color: white; background: var(--green); }
+    .btn-light { color: var(--ink); border: 1px solid var(--line); background: white; }
+    details summary { cursor: pointer; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+    .event-list { display: grid; gap: 8px; max-height: 220px; overflow: auto; }
+    .event { padding: 10px 12px; border-left: 3px solid var(--green-2); border-radius: 6px 11px 11px 6px; color: var(--muted); background: #f5f7f2; font-size: .76rem; }
+    .event time { float: right; color: #8b9993; }
+    .empty { color: var(--muted); font-size: .8rem; }
+    .toast { position: fixed; left: 50%; bottom: 24px; z-index: 10; transform: translate(-50%, 20px); padding: 12px 16px; border-radius: 12px; color: white; background: var(--ink); box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .danger { color: var(--red) !important; }
+    .warning { color: var(--amber) !important; }
+    @media (max-width: 850px) {
+      .hero, .grid { grid-template-columns: minmax(0, 1fr); }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .config-grid { grid-template-columns: repeat(2, 1fr); }
+      .sim-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 520px) {
+      .shell { width: min(calc(100% - 20px), 1180px); padding-top: 16px; }
+      header { align-items: flex-start; flex-wrap: wrap; }
+      .chips { width: 100%; justify-content: flex-start; }
+      .hero { padding: 24px 20px; border-radius: 22px; }
+      .actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .actions .btn { min-width: 0; padding-inline: 10px; }
+      .metrics { gap: 9px; }
+      .metric { padding: 15px; }
+      .panel { padding: 18px; }
+      .config-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2 4.8 13H11l-1 9 8.2-11H12l1-9Z"/></svg>
+        </div>
+        <div><strong>VoltGuard</strong><span>Ổ cắm sạc thông minh 12 V</span></div>
+      </div>
+      <div class="chips">
+        <span class="chip" id="modeChip">Đang xác định chế độ</span>
+        <span class="chip"><i class="dot" id="connectionDot"></i><span id="connectionText">Đang kết nối</span></span>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Trạng thái hệ thống</p>
+        <h1 class="state-title" id="stateTitle">Đang kết nối…</h1>
+        <p class="state-detail" id="stateDetail">Đang đọc dữ liệu từ ESP32.</p>
+        <div class="actions">
+          <button class="btn btn-primary" id="startButton">Bắt đầu phiên sạc</button>
+          <button class="btn btn-ghost" id="continueButton">Tiếp tục sạc</button>
+          <button class="btn btn-danger" id="stopButton">Ngắt ngay</button>
+          <button class="btn btn-ghost" id="notifyButton">Bật thông báo</button>
+        </div>
+      </div>
+      <aside class="hero-side">
+        <div>
+          <div class="hero-side-label">Thời gian còn lại trước khi tự ngắt</div>
+          <div class="countdown" id="countdown">--:--</div>
+        </div>
+        <div class="progress"><span id="countdownProgress"></span></div>
+        <div class="offline-note">Thuật toán và bảo vệ nhiệt chạy trực tiếp trên ESP32. Mất Wi‑Fi không làm dừng chức năng ngắt.</div>
+      </aside>
+    </section>
+
+    <section class="metrics" aria-label="Số liệu hiện tại">
+      <article class="card metric"><div class="metric-head"><span>Điện áp</span><i class="metric-icon">V</i></div><div class="metric-value"><span id="voltage">--</span><small class="unit">V</small></div></article>
+      <article class="card metric"><div class="metric-head"><span>Dòng điện</span><i class="metric-icon">A</i></div><div class="metric-value"><span id="current">--</span><small class="unit">A</small></div></article>
+      <article class="card metric"><div class="metric-head"><span>Công suất</span><i class="metric-icon">W</i></div><div class="metric-value"><span id="power">--</span><small class="unit">W</small></div></article>
+      <article class="card metric"><div class="metric-head"><span>Nhiệt độ</span><i class="metric-icon">°</i></div><div class="metric-value"><span id="temperature">--</span><small class="unit">°C</small></div></article>
+    </section>
+
+    <section class="grid">
+      <article class="card panel">
+        <div class="panel-head">
+          <div><h2>Công suất theo thời gian</h2><div class="sub">60 mẫu gần nhất · đường liền là công suất đã lọc</div></div>
+          <div class="legend"><span><i style="background:#26936b"></i>Công suất</span><span><i style="background:#c87c16"></i>Ngưỡng đầy</span></div>
+        </div>
+        <div class="chart-wrap"><canvas id="powerChart" aria-label="Biểu đồ công suất"></canvas></div>
+      </article>
+      <article class="card panel">
+        <div class="panel-head"><div><h2>Chi tiết phiên sạc</h2><div class="sub">Thông số dùng cho quyết định cục bộ</div></div></div>
+        <div class="facts">
+          <div class="fact"><span>MOSFET tải</span><strong id="relayFact">--</strong></div>
+          <div class="fact"><span>Biến trở / PWM</span><strong id="pwmFact">--</strong></div>
+          <div class="fact"><span>Cảm biến DHT11</span><strong id="temperatureNodeFact">--</strong></div>
+          <div class="fact"><span>Thời gian phiên</span><strong id="sessionFact">--</strong></div>
+          <div class="fact"><span>Ngưỡng nhận diện đầy</span><strong id="thresholdFact">--</strong></div>
+          <div class="fact"><span>Số phiên đã học</span><strong id="learningFact">--</strong></div>
+          <div class="fact"><span>Công suất điển hình</span><strong id="learnedPowerFact">--</strong></div>
+          <div class="fact"><span>Địa chỉ truy cập</span><strong id="ipFact">--</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="card panel section" id="simulationPanel" hidden>
+      <div class="panel-head"><div><h2>Bàn điều khiển mô phỏng</h2><div class="sub">Tạo tình huống kiểm thử mà không cần INA219, MOSFET hoặc cảm biến thật</div></div></div>
+      <div class="sim-grid">
+        <button class="scenario" data-preset="charging">Đang sạc</button>
+        <button class="scenario" data-preset="near_full">Gần đầy</button>
+        <button class="scenario" data-preset="full">Đã đầy</button>
+        <button class="scenario" data-preset="overheat">Quá nhiệt</button>
+        <button class="scenario" data-preset="sensor_fault">Lỗi cảm biến</button>
+        <button class="scenario" data-preset="disconnected">Không tải</button>
+      </div>
+    </section>
+
+    <section class="grid section">
+      <details class="card panel">
+        <summary class="panel-head"><div><h2>Cấu hình thuật toán</h2><div class="sub">Chạm để mở · cấu hình được lưu trong ESP32</div></div><strong>＋</strong></summary>
+        <form id="configForm">
+          <div class="config-grid">
+            <label>Ngưỡng đang sạc (W)<input name="activePower" type="number" min="0.2" step="0.1" required></label>
+            <label>Ngưỡng đầy cố định (W)<input name="fullPower" type="number" min="0.05" step="0.05" required></label>
+            <label>Tỷ lệ tự học<input name="fullRatio" type="number" min="0.05" max="0.8" step="0.01" required></label>
+            <label>Nhiệt độ cảnh báo (°C)<input name="warningTemp" type="number" step="0.5" required></label>
+            <label>Nhiệt độ ngắt (°C)<input name="cutoffTemp" type="number" step="0.5" required></label>
+            <label>Nhiệt độ phục hồi (°C)<input name="recoveryTemp" type="number" step="0.5" required></label>
+            <label>Thời gian sạc tối thiểu (giây)<input name="minimumChargeSeconds" type="number" min="0" required></label>
+            <label>Xác thực công suất thấp (giây)<input name="confirmSeconds" type="number" min="3" required></label>
+            <label>Chờ phản hồi (giây)<input name="decisionSeconds" type="number" min="5" required></label>
+            <label>Tạm hoãn sau “tiếp tục” (giây)<input name="continuePauseSeconds" type="number" min="5" required></label>
+          </div>
+          <div class="config-actions">
+            <div><button class="btn btn-light" type="button" id="quickDemoButton">Điền cấu hình demo nhanh</button> <button class="btn btn-light" type="button" id="resetLearningButton">Xóa dữ liệu tự học</button></div>
+            <button class="btn btn-small" type="submit">Lưu cấu hình</button>
+          </div>
+        </form>
+      </details>
+      <article class="card panel">
+        <div class="panel-head"><div><h2>Nhật ký sự kiện</h2><div class="sub">Lưu trong trình duyệt của phiên hiện tại</div></div></div>
+        <div class="event-list" id="eventList"><div class="empty">Chưa có sự kiện.</div></div>
+      </article>
+    </section>
+  </main>
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const stateInfo = {
+      idle: ['Sẵn sàng', 'Nhấn “Bắt đầu phiên sạc” sau khi đã kết nối tải. MOSFET đang ở trạng thái an toàn.'],
+      charging: ['Đang sạc', 'Hệ thống đang theo dõi công suất và nhiệt độ theo thời gian thực.'],
+      verifying_full: ['Đang xác thực', 'Công suất đã giảm thấp. ESP32 đang chờ tín hiệu ổn định để loại bỏ nhiễu.'],
+      waiting_decision: ['Có thể đã đầy', 'Bạn có thể ngắt ngay hoặc tiếp tục sạc. Nếu không phản hồi, hệ thống sẽ tự xác thực và ngắt.'],
+      stopped_full: ['Đã ngắt an toàn', 'Quá trình sạc được xác nhận đã hoàn tất. Nhấn bắt đầu để tạo phiên mới.'],
+      stopped_overheat: ['Đã ngắt do quá nhiệt', 'Chờ nhiệt độ giảm xuống ngưỡng phục hồi rồi mới bắt đầu phiên mới.'],
+      stopped_sensor_fault: ['Đã ngắt do lỗi cảm biến', 'Kiểm tra INA219 và cảm biến nhiệt trước khi thử lại.'],
+      stopped_manual: ['Đã ngắt thủ công', 'MOSFET đã khóa theo yêu cầu của người dùng.']
+    };
+    const eventLabels = {
+      session_started: 'Đã bắt đầu phiên sạc mới', full_suspected: 'Phát hiện dấu hiệu sạc hoàn tất',
+      full_confirmed: 'Đã xác nhận đầy và tự ngắt', continue_selected: 'Người dùng chọn tiếp tục sạc',
+      manual_stopped: 'Người dùng ngắt thủ công', overheat_stopped: 'Quá nhiệt — MOSFET đã khóa',
+      sensor_fault_stopped: 'Lỗi cảm biến — MOSFET đã khóa', start_blocked_hot: 'Không thể bắt đầu: nhiệt độ chưa an toàn',
+      start_blocked_sensor: 'Không thể bắt đầu: cảm biến chưa sẵn sàng'
+    };
+    const localMode = location.protocol === 'file:';
+    let lastStatus = null;
+    let lastEventId = -1;
+    let configLoaded = false;
+    let samples = [];
+    let toastTimer;
+
+    const localStatus = {
+      state: 'idle', event: 'none', eventId: 0, relayOn: false, outputEnabled: false, mosfetDuty: 0,
+      potentiometer: 100, voltage: 12, current: .48, power: 5.76, filteredPower: 5.76, temperature: 30,
+      humidity: 55, temperatureAgeSeconds: 0, temperatureSource: 'simulation', powerValid: true,
+      temperatureValid: true, temperatureWarning: false,
+      seenActive: false, sessionSeconds: 0, decisionRemainingSeconds: 0, effectiveFullThreshold: 1.5,
+      learnedPower: 0, learningSamples: 0, simulation: true, wifiConnected: true, stationIp: 'trình duyệt', apIp: '192.168.4.1',
+      config: { activePower: 2, fullPower: .8, fullRatio: .18, warningTemp: 35, cutoffTemp: 45,
+        recoveryTemp: 32, minimumChargeSeconds: 10, confirmSeconds: 60, decisionSeconds: 900, continuePauseSeconds: 300 }
+    };
+
+    async function api(path, options = {}) {
+      if (localMode) return { ...localStatus };
+      const response = await fetch(path, { cache: 'no-store', ...options });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || 'Yêu cầu thất bại');
+      return data.status || data;
+    }
+
+    function post(path, values) {
+      return api(path, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(values) });
+    }
+
+    function formatTime(totalSeconds) {
+      const seconds = Math.max(0, Number(totalSeconds) || 0);
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function toast(message) {
+      const el = $('#toast'); el.textContent = message; el.classList.add('show');
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+    }
+
+    function addEvent(message) {
+      const list = $('#eventList');
+      if (list.querySelector('.empty')) list.innerHTML = '';
+      const item = document.createElement('div'); item.className = 'event';
+      item.textContent = message;
+      const time = document.createElement('time'); time.textContent = new Date().toLocaleTimeString('vi-VN');
+      item.appendChild(time); list.prepend(item);
+    }
+
+    function maybeNotify(status) {
+      if (status.eventId === lastEventId) return;
+      lastEventId = status.eventId;
+      const message = eventLabels[status.event];
+      if (!message) return;
+      addEvent(message);
+      const urgent = ['full_suspected','full_confirmed','overheat_stopped','sensor_fault_stopped'].includes(status.event);
+      if (urgent && 'Notification' in window && Notification.permission === 'granted') {
+        new Notification('VoltGuard', { body: message, tag: `voltguard-${status.eventId}` });
+      }
+    }
+
+    function fillConfig(config) {
+      if (configLoaded) return;
+      Object.entries(config).forEach(([name, value]) => {
+        const input = document.querySelector(`[name="${name}"]`); if (input) input.value = value;
+      });
+      configLoaded = true;
+    }
+
+    function render(status) {
+      lastStatus = status; maybeNotify(status); fillConfig(status.config);
+      const info = stateInfo[status.state] || ['Không xác định', 'Không đọc được trạng thái hệ thống.'];
+      $('#stateTitle').textContent = info[0]; $('#stateDetail').textContent = info[1];
+      $('#voltage').textContent = status.powerValid ? Number(status.voltage).toFixed(2) : 'Lỗi';
+      $('#current').textContent = status.powerValid ? Number(status.current).toFixed(3) : 'Lỗi';
+      $('#power').textContent = status.powerValid ? Number(status.filteredPower).toFixed(2) : 'Lỗi';
+      $('#temperature').textContent = status.temperatureValid ? Number(status.temperature).toFixed(1) : 'Lỗi';
+      $('#temperature').parentElement.classList.toggle('danger', status.state === 'stopped_overheat');
+      $('#temperature').parentElement.classList.toggle('warning', status.temperatureWarning && status.state !== 'stopped_overheat');
+      const outputEnabled = status.outputEnabled ?? status.relayOn;
+      $('#relayFact').textContent = outputEnabled ? 'Được phép cấp tải' : 'Đã khóa an toàn';
+      $('#pwmFact').textContent = `${Number(status.potentiometer || 0).toFixed(0)}% / ${Number(status.mosfetDuty || 0).toFixed(0)}%`;
+      $('#temperatureNodeFact').textContent = status.temperatureValid
+        ? `${Number(status.humidity || 0).toFixed(0)}% RH · ${status.temperatureSource === 'simulation' ? 'mô phỏng' : `${status.temperatureAgeSeconds}s trước`}`
+        : 'Mất kết nối';
+      $('#sessionFact').textContent = formatTime(status.sessionSeconds);
+      $('#thresholdFact').textContent = `${Number(status.effectiveFullThreshold).toFixed(2)} W`;
+      $('#learningFact').textContent = `${status.learningSamples} / 3 phiên`;
+      $('#learnedPowerFact').textContent = status.learningSamples ? `${Number(status.learnedPower).toFixed(2)} W` : 'Chưa có dữ liệu';
+      $('#ipFact').textContent = status.wifiConnected && status.stationIp !== '0.0.0.0' ? status.stationIp : status.apIp;
+      $('#modeChip').textContent = status.simulation ? 'MÔ PHỎNG' : 'PHẦN CỨNG';
+      $('#simulationPanel').hidden = !status.simulation;
+      $('#connectionDot').classList.toggle('online', true);
+      $('#connectionText').textContent = localMode ? 'Xem trước giao diện' : (status.wifiConnected ? 'Wi‑Fi đã kết nối' : 'Điểm phát cục bộ');
+
+      const waiting = status.state === 'waiting_decision';
+      $('#countdown').textContent = waiting ? formatTime(status.decisionRemainingSeconds) : '--:--';
+      const total = status.config.decisionSeconds || 1;
+      $('#countdownProgress').style.width = waiting ? `${Math.max(0, status.decisionRemainingSeconds / total * 100)}%` : '0%';
+      $('#startButton').disabled = outputEnabled;
+      $('#continueButton').disabled = !waiting && status.state !== 'verifying_full';
+      $('#stopButton').disabled = !outputEnabled;
+
+      samples.push({ power: Number(status.filteredPower) || 0, threshold: Number(status.effectiveFullThreshold) || 0 });
+      if (samples.length > 60) samples.shift();
+      drawChart();
+    }
+
+    function drawChart() {
+      const canvas = $('#powerChart'); const rect = canvas.getBoundingClientRect(); const ratio = window.devicePixelRatio || 1;
+      canvas.width = rect.width * ratio; canvas.height = rect.height * ratio;
+      const ctx = canvas.getContext('2d'); ctx.scale(ratio, ratio);
+      const w = rect.width, h = rect.height, pad = 18;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = '#e2e6df'; ctx.lineWidth = 1;
+      for (let i=0; i<4; i++) { const y = pad + (h-pad*2)*i/3; ctx.beginPath(); ctx.moveTo(pad,y); ctx.lineTo(w-pad,y); ctx.stroke(); }
+      const max = Math.max(10, ...samples.map(s => Math.max(s.power, s.threshold))) * 1.15;
+      const point = (value, i) => [pad + (w-pad*2) * i / Math.max(59, samples.length-1), h-pad-(h-pad*2)*value/max];
+      const line = (key, color, dashed=false) => {
+        ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.setLineDash(dashed?[6,5]:[]);
+        samples.forEach((s,i)=>{ const [x,y]=point(s[key],i); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke(); ctx.setLineDash([]);
+      };
+      line('threshold','#c87c16',true); line('power','#26936b');
+    }
+
+    async function refresh() {
+      try { render(await api('/api/status')); }
+      catch (error) { $('#connectionDot').classList.remove('online'); $('#connectionText').textContent = 'Mất kết nối'; }
+    }
+
+    async function action(name) {
+      if (localMode) { toast('Hãy tải firmware lên ESP32 để điều khiển thật.'); return; }
+      try { render(await post('/api/action', { action: name })); toast('Đã thực hiện lệnh.'); }
+      catch (error) { toast(error.message); }
+    }
+
+    $('#startButton').addEventListener('click', () => action('start'));
+    $('#continueButton').addEventListener('click', () => action('continue'));
+    $('#stopButton').addEventListener('click', () => action('stop'));
+    $('#resetLearningButton').addEventListener('click', () => action('reset_learning'));
+    $('#notifyButton').addEventListener('click', async () => {
+      if (!('Notification' in window)) return toast('Trình duyệt không hỗ trợ thông báo.');
+      const result = await Notification.requestPermission();
+      toast(result === 'granted' ? 'Đã bật thông báo.' : 'Thông báo chưa được cấp quyền.');
+    });
+    document.querySelectorAll('[data-preset]').forEach(button => button.addEventListener('click', async () => {
+      if (localMode) return toast('Đây là bản xem trước. Hãy mở dashboard từ ESP32.');
+      try { render(await post('/api/sim', { preset: button.dataset.preset })); toast(`Đã đặt: ${button.textContent}`); }
+      catch (error) { toast(error.message); }
+    }));
+    $('#quickDemoButton').addEventListener('click', () => {
+      const values = { minimumChargeSeconds: 3, confirmSeconds: 8, decisionSeconds: 30, continuePauseSeconds: 20 };
+      Object.entries(values).forEach(([name,value]) => document.querySelector(`[name="${name}"]`).value = value);
+      toast('Đã điền thời gian demo 3s / 8s / 30s. Nhấn Lưu cấu hình.');
+    });
+    $('#configForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      if (localMode) return toast('Cấu hình chỉ lưu khi trang chạy trên ESP32.');
+      try { render(await post('/api/config', Object.fromEntries(new FormData(event.target)))); toast('Đã lưu cấu hình vào ESP32.'); }
+      catch (error) { toast(error.message); }
+    });
+    window.addEventListener('resize', drawChart);
+    refresh(); setInterval(refresh, 1000);
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,10 @@
+.pio/
+.vscode/
+include/secrets.h
+*.bin
+*.elf
+*.exe
+dashboard-*.png
+.preview-edge*/
+.artifacts/
+
